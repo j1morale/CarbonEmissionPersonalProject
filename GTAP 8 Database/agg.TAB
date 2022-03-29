@@ -1,0 +1,251 @@
+!============================================================================!
+! AGG.TAB: Data Base Aggregation TAB file                                    
+  GTAP Data Base Version 5/6
+  Mark Horridge September 2002  (revised Oct 2004)                                          
+ 
+ This program has 3 tasks:
+
+ * to create an aggregated parameter file from original parameters DPARAM
+    and supplied weights DPRMWGT
+
+ * to create the aggregated sets file USETS
+
+ * to create the SUPP file for AggHAR to use in aggregating BASEDATA
+   and TSTRADE files. 
+!
+!============================================================================!
+
+Equation (none);
+File
+! Inputs !
+      DSETS   # Disaggregate sets (original) #;
+      DPARAM  # Disaggregate parameters (original) #;
+      DPRMWGT # Weights for parameter aggregation (from MkWgt) #;
+      AMAP    # User aggregation scheme and new sets (from GTAPAgg)#;
+! Outputs !
+(new) USETS   # Aggregated sets #;
+(new) PARAM   # Aggregated parameters #;
+(new) SUPP    # Instructions for AggHAR #;
+
+Coefficient ! example of how TAB program might use DVER headers ! 
+ VERSETS # Format of sets file #;
+ VERDATA # Format of flows file #;
+ VERPARM # Format of sets file #;
+! note: even if DVER headers were missing on input files
+    AGG can still read zero DVER values from the following
+  headers on AMAP file prepared from GTAPAGG !
+Read VERSETS from file AMAP header "DVSE";
+Read VERPARM from file AMAP header "DVPA";
+Read VERDATA from file AMAP header "DVBA";
+
+Write VERPARM to file PARAM header "DVER";
+Write VERSETS to file USETS header "DVER";
+
+! Following assertions are perhaps optional !
+Assertion # DVER on sets file differs from DVER on flows file #
+  ABS(VERSETS - VERDATA)<0.01; 
+Assertion # DVER on params file differs from DVER on flows file #
+  ABS(VERPARM - VERDATA)<0.01; 
+
+Set ! for dis-aggregate data !
+DREG       # Regions #              read elements from file DSETS header "H1";
+DTRAD_COMM # Traded commodities #   read elements from file DSETS header "H2";
+DENDW_COMM # Endowment commodities #read elements from file DSETS header "H6";
+CGDS_COMM  # Capital goods #        read elements from file DSETS header "H9";
+DMARG_COMM # Margin goods #         read elements from file DSETS header "MARG";
+DPROD_COMM # Produced commodities #    = DTRAD_COMM union CGDS_COMM;
+DDEMD_COMM # Demanded commodities #    = DENDW_COMM union DTRAD_COMM;
+NSAV_COMM  # Non-savings commodities # = DDEMD_COMM union CGDS_COMM;
+
+Subset
+ DPROD_COMM is subset of NSAV_COMM;
+ DMARG_COMM is subset of NSAV_COMM;
+ DMARG_COMM is subset of DTRAD_COMM;
+
+Set ! for aggregate data !
+ REG       # Regions #               read elements from file AMAP header "H1";
+ TRAD_COMM # Traded commodities #    read elements from file AMAP header "H2";
+ ENDW_COMM # Endowment commodities # read elements from file AMAP header "H6";
+ PROD_COMM # Produced commodities #  = TRAD_COMM union CGDS_COMM;
+
+!============================================================================!
+!                    Read aggregation scheme                              !
+!============================================================================!
+! region mapping !
+Coefficient (integer) (all,r,DREG) RMI(r);
+Read RMI from file AMAP header "M1";
+Mapping RM from DREG to REG;
+Formula (all,r,DREG) RM(r) = RMI(r);
+
+! commodities mapping !
+Coefficient (integer) (all,i,DTRAD_COMM) CMI(i);
+Read CMI from file AMAP header "M2";
+Mapping CM from DTRAD_COMM to TRAD_COMM;
+Formula (all,i,DTRAD_COMM) CM(i) = CMI(i);
+
+! endowment mapping !
+Coefficient (integer) (all,i,DENDW_COMM) EMI(i);
+Read EMI from file AMAP header "M6";
+Mapping EM from DENDW_COMM to ENDW_COMM;
+Formula (all,i,DENDW_COMM) EM(i) = EMI(i);
+
+! discover new margin set !
+Coefficient (integer) (all,i,TRAD_COMM) NMAR(i) # Number of margin coms #;
+Formula (all,i,TRAD_COMM) NMAR(i) = sum{q,DMARG_COMM: CM(q)=i, 1};
+Set MARG_COMM = (all,i,TRAD_COMM:NMAR(i)>0);
+
+! write USETS file !
+Write (Set) REG to file USETS header "H1";
+Write (Set) TRAD_COMM to file USETS header "H2";
+Write (Set) ENDW_COMM to file USETS header "H6";
+Write (Set) CGDS_COMM to file USETS header "H9";
+Write (Set) MARG_COMM to file USETS header "MARG";
+
+Write (Set) DREG to file USETS header "OREG" longname "ORGREG Original regions";
+Write (Set) DTRAD_COMM to file USETS header "OSEC" 
+longname "ORGSEC Original sectors";
+
+Transfer "H1L" from file AMAP to file USETS;
+Transfer "H2L" from file AMAP to file USETS;
+Write (by_elements) CM to file USETS header "MAPS"
+  longname "Sectoral mapping used to aggregate data";
+Write (by_elements) RM to file USETS header "MAPR"
+  longname "Regional mapping used to aggregate data";
+Write (by_elements) EM to file USETS header "MAPF"
+  longname "Factor mapping used to aggregate data";
+
+! write SUPP file !
+! new sets !
+Write (Set) REG to file SUPP header "H1" longname "Set AREG";
+Write (Set) TRAD_COMM to file SUPP header "H2" longname "Set ATRAD_COMM";
+Write (Set) ENDW_COMM to file SUPP header "H6" longname "Set AENDW_COMM";
+Write (Set) PROD_COMM to file SUPP header "HX" longname "Set APROD_COMM";
+
+! added jmh 18Mar11 to assist aggregate TsTrade !
+Write (Set) DTRAD_COMM to file SUPP header "O2" longname "Set TRAD_COMM";
+
+! mappings !
+Transfer "M1" from file AMAP to file SUPP;  ! REG mapping !
+Transfer "M1a" from file AMAP to file SUPP; ! NREG mapping..for TSTRADE !
+Transfer "M2" from file AMAP to file SUPP;  ! TRAD_COMM mapping !
+Transfer "M6" from file AMAP to file SUPP;  ! ENDW_COMM mapping !
+Transfer "M2X" from file AMAP to file SUPP; ! PROD_COMM mapping !
+
+Set WCOMMAND # Weight instructions for AggHAR # (DPSM@@@@WDPS);
+!above tells AggHAR to aggregate header DPSM using weights WDPS.
+ More elements might be added to the WCOMMAND set !
+Transfer "WDPS" from file DPRMWGT to file SUPP;
+Write (Set) WCOMMAND to file SUPP header "WAGG" 
+  longname "Instructions for weighted aggregation";
+! header WAGG is special for AggHAR !
+
+!============================================================================!
+! Parameters                                                                 !
+!============================================================================!
+Coefficient ! weights for parameter aggregation !
+(all,c,DTRAD_COMM)(all,t,DREG)                       WSUBPAR(c,t);
+(all,c,DTRAD_COMM)(all,t,DREG)                       WINCPAR(c,t);
+(all,c,DPROD_COMM)                                   WESUBVA(c);
+(all,c,DTRAD_COMM)                                   WESUBD(c);
+(all,c,DTRAD_COMM)                                   WESUBM(c);
+(all,n,DREG)                                         WRORFLEX(n);
+(all,c,DPROD_COMM)                                   WESUBT(c);
+Read
+ WSUBPAR from file DPRMWGT header "WSUB";
+ WINCPAR from file DPRMWGT header "WINC";
+ WESUBVA from file DPRMWGT header "WESB";
+ WESUBD  from file DPRMWGT header "WSBD";
+ WESUBM  from file DPRMWGT header "WSBM";
+ WRORFLEX from file DPRMWGT header "WROR";
+ WESUBT from file DPRMWGT header "WSBT";
+
+Coefficient
+(all,i,DTRAD_COMM)(all,r,DREG) DSUBPAR(i,r);
+(all,i,DTRAD_COMM)(all,r,DREG) DINCPAR(i,r);
+(all,i,DTRAD_COMM)             DSIGD(i);
+(all,i,DTRAD_COMM)             DSIGM(i);
+(all,i,DPROD_COMM)             DSIGVA(i);
+(all,r,DREG)                   DRORFLEX(r);
+(integer)                      RORDELTA;
+(all,i,DPROD_COMM)             DESUBT(i);
+Read
+ DSUBPAR  from file DPARAM header "SUBP";
+ DINCPAR  from file DPARAM header "INCP";
+ DSIGD    from file DPARAM header "ESBD";
+ DSIGM    from file DPARAM header "ESBM";
+ DSIGVA   from file DPARAM header "ESBV";
+ DRORFLEX from file DPARAM header "RFLX";
+ RORDELTA from file DPARAM header "RDLT";
+ DESUBT   from file DPARAM header "ESBT";
+
+Coefficient ! parameters to be aggregated !
+ (all,c,TRAD_COMM)(all,t,REG) SUBPAR(c,t);
+ (all,c,TRAD_COMM)(all,t,REG) INCPAR(c,t);
+ (all,c,PROD_COMM)            ESUBVA(c);
+ (all,c,TRAD_COMM)            ESUBD(c);
+ (all,c,TRAD_COMM)            ESUBM(c);
+ (all,n,REG)                  RORFLEX(n);
+ (all,c,PROD_COMM)            ESUBT(c);
+
+Formula
+ (all,c,TRAD_COMM)(all,t,REG) SUBPAR(c,t) =
+   sum{i,DTRAD_COMM:CM(i)=c,sum{r,DREG:RM(r)=t,WSUBPAR(i,r)*DSUBPAR(i,r)}}
+  /sum{j,DTRAD_COMM:CM(j)=c,sum{q,DREG:RM(q)=t,WSUBPAR(j,q)}};
+
+ (all,c,TRAD_COMM)(all,t,REG) INCPAR(c,t) =
+   sum{i,DTRAD_COMM:CM(i)=c,sum{r,DREG:RM(r)=t,WINCPAR(i,r)*DINCPAR(i,r)}}
+  /sum{j,DTRAD_COMM:CM(j)=c,sum{q,DREG:RM(q)=t,WINCPAR(j,q)}};
+
+ (all,c,PROD_COMM) ESUBVA(c)=1.0;
+ (all,c,TRAD_COMM) ESUBVA(c) = sum{i,DTRAD_COMM:CM(i)=c, WESUBVA(i)*DSIGVA(i)}
+                              /sum{j,DTRAD_COMM:CM(j)=c, WESUBVA(j)};
+
+ (all,c,TRAD_COMM) ESUBD(c) = sum{i,DTRAD_COMM:CM(i)=c,WESUBD(i)*DSIGD(i)}
+                             /sum{j,DTRAD_COMM:CM(j)=c,WESUBD(j)};
+
+ (all,c,TRAD_COMM) ESUBM(c) = sum{i,DTRAD_COMM:CM(i)=c,WESUBM(i)*DSIGM(i)}
+                             /sum{j,DTRAD_COMM:CM(j)=c,WESUBM(j)};
+
+ (all,n,REG)       RORFLEX(n) = sum{r,DREG:RM(r)=n,WRORFLEX(r)*DRORFLEX(r)}
+                               /sum{q,DREG:RM(q)=n,WRORFLEX(q)};
+
+ (all,c,PROD_COMM) ESUBT(c) = sum{i,DTRAD_COMM:CM(i)=c,WESUBT(i)*DESUBT(i)}
+                             /sum{j,DTRAD_COMM:CM(j)=c,WESUBT(j)};
+
+! Read user-specified parameters from GTAPAgg !
+Coefficient (integer) (all,i,ENDW_COMM) SLUG(i);
+                      (all,i,ENDW_COMM) ETRAE(i);
+Read SLUG  from file AMAP header "SLUG";
+     ETRAE from file AMAP header "ETRE";
+
+! Write parameters !
+Write
+ SUBPAR to file PARAM header "SUBP"
+  longname "CDE substitution parameter";
+ INCPAR to file PARAM header "INCP" longname "CDE expansion parameter";
+ ESUBT to file PARAM header "ESBT"
+  longname "Elasticity of intermediate input substitution";
+ SLUG to file PARAM header "SLUG"
+   longname "Binary parameter for factor mobility: 1=sluggish 0=mobile";
+ ETRAE to file PARAM header "ETRE"
+  longname "CET between sectors for sluggish primary factors";
+ ESUBVA to file PARAM header "ESBV"
+  longname "CES between primary factors in production";
+ ESUBD to file PARAM header "ESBD"
+  longname "Armington CES for domestic/imported allocation";
+ ESUBM to file PARAM header "ESBM"
+  longname "Armington CES for regional allocation of imports";
+ RORDELTA to file PARAM header "RDLT"
+  longname "Investment allocation binary coefficient";
+ RORFLEX to file PARAM header "RFLX"
+  longname "Expected rate of return flexibility parameter";
+
+! next 2 statements transfer unknown extra data from input to output !
+Transfer unwritten from file DSETS to file USETS; 
+Transfer unwritten from file DPARAM to file PARAM; 
+
+Transfer "LICN" from file AMAP to file USETS;
+Transfer "LICN" from file AMAP to file PARAM;
+Transfer "LICN" from file AMAP to file SUPP;
+
+!=============================== end of file ================================!

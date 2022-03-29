@@ -1,0 +1,112 @@
+!============================================================================!
+! Prepares weights for GTAP parameter aggregation                            !
+! Mark Horridge September 2002                                               !
+! GTAP Data Base Version 5x (2002)                                           !
+!============================================================================!
+
+Equation (none);
+File
+      DDATA   # Original flows data: RunGTAP format #;
+      DSETS   # Set specification: RunGTAP format #;
+      DPARAM  # Disaggregate parameters (original) #;
+(new) DPRMWGT # Weights for parameter aggregation #;
+! DPARAM is not used but included for possible future use !
+!============================================================================!
+! Sets for dis-aggregate data                                                !
+!============================================================================!
+
+Set
+ REG       # Regions #              read elements from file DSETS header "H1";
+ TRAD_COMM # Traded commodities #   read elements from file DSETS header "H2";
+ ENDW_COMM # Endowment commodities #read elements from file DSETS header "H6";
+ CGDS_COMM # Capital goods #        read elements from file DSETS header "H9";
+ MARG_COMM # Margin goods #         read elements from file DSETS header "MARG";
+ PROD_COMM # Produced commodities #    = TRAD_COMM union CGDS_COMM;
+ DEMD_COMM # Demanded commodities #    = ENDW_COMM union TRAD_COMM;
+ NSAV_COMM # Non-savings commodities # = DEMD_COMM union CGDS_COMM;
+Subset
+ PROD_COMM is subset of NSAV_COMM;
+ MARG_COMM is subset of NSAV_COMM;
+
+Coefficient
+ (all,i,ENDW_COMM)(all,j,PROD_COMM)(all,r,REG) EVFA(i,j,r);
+ (all,i,TRAD_COMM)(all,j,PROD_COMM)(all,r,REG) VDFA(i,j,r);
+ (all,i,TRAD_COMM)(all,j,PROD_COMM)(all,r,REG) VIFA(i,j,r);
+ (all,i,TRAD_COMM)(all,r,REG)                  VDGA(i,r);
+ (all,i,TRAD_COMM)(all,r,REG)                  VIGA(i,r);
+ (all,i,TRAD_COMM)(all,r,REG)                  VDPA(i,r);
+ (all,i,TRAD_COMM)(all,r,REG)                  VIPA(i,r);
+ (all,r,REG)                                   VKB(r);
+Read
+ VIFA from file DDATA header "VIFA";
+ EVFA from file DDATA header "EVFA";
+ VIPA from file DDATA header "VIPA";
+ VIGA from file DDATA header "VIGA";
+ VDGA from file DDATA header "VDGA";
+ VDFA from file DDATA header "VDFA";
+ VDPA from file DDATA header "VDPA";
+ VKB  from file DDATA header "VKB";
+!============================================================================!
+! Derivatives of Base Data                                                    !
+!============================================================================!
+Coefficient
+(all,i,DEMD_COMM)(all,j,PROD_COMM)(all,r,REG)    VFA(i,j,r)
+  # Producer expenditure on i by industry j, in region r, at agent's prices #;
+(all,i,PROD_COMM)(all,r,REG)                     VOA(i,r)
+  # Value of commodity i output in region r. #;
+(all,i,TRAD_COMM)(all,r,REG)                     VPA(i,r)
+  # Total private house expend in region r valued at agent's prices #;
+(all,c,PROD_COMM)                                VO(c)
+  # Value of output by industry, at agent prices, for the world as a whole #;
+(all,c,PROD_COMM)                                VA(c)
+  # Value added by industry, at firm prices,  for the world as whole #;
+(all,c,TRAD_COMM)                                VI(c)
+  # Value of imports by commodity, at agent prices,  for the world as whole #;
+(all,c,TRAD_COMM)                                VDI(c)
+  # Value of dom and imp by com, at agent prices, for the world as whole #;
+
+Formula
+(all,i,ENDW_COMM)(all,j,PROD_COMM)(all,r,REG)
+                             VFA(i,j,r) = EVFA(i,j,r);
+(all,i,TRAD_COMM)(all,j,PROD_COMM)(all,s,REG)
+                             VFA(i,j,s) = VDFA(i,j,s) + VIFA(i,j,s);
+(all,i,PROD_COMM)(all,r,REG) VOA(i,r) = sum{j,DEMD_COMM, VFA(j,i,r)};
+(all,i,TRAD_COMM)(all,s,REG) VPA(i,s) = VDPA(i,s) + VIPA(i,s);
+(all,c,PROD_COMM)            VO(c) = sum{r,REG, VOA(c,r)};
+(all,c,PROD_COMM)            VA(c) = sum{j,ENDW_COMM,sum{r,REG,EVFA(j,c,r)}};
+(all,i,TRAD_COMM)            VI(i) = sum{r,REG, sum{j,PROD_COMM, VIFA(i,j,r)}
+                                      + VIPA(i,r) + VIGA(i,r)};
+(all,i,TRAD_COMM) VDI(i) = VI(i) + sum{r,REG, sum{j,PROD_COMM, VDFA(i,j,r)}
+                                      + VDPA(i,r) + VDGA(i,r)};
+
+Coefficient ! weights for parameter aggregation !
+(all,c,TRAD_COMM)(all,t,REG) WSUBPAR(c,t);
+(all,c,TRAD_COMM)(all,t,REG) WINCPAR(c,t);
+(all,c,PROD_COMM)            WESUBVA(c);
+(all,c,TRAD_COMM)            WESUBD(c);
+(all,c,TRAD_COMM)            WESUBM(c);
+(all,n,REG)                  WRORFLEX(n);
+(all,c,PROD_COMM)            WESUBT(c);
+(all,n,REG)                  WDPSM(n); ! for DPSM header on flows file !
+ TINY;
+Formula ! weights for parameter aggregation !
+ TINY = 0.000000000001;
+(all,c,TRAD_COMM)(all,t,REG) WSUBPAR(c,t) = TINY + VPA(c,t);
+(all,c,TRAD_COMM)(all,t,REG) WINCPAR(c,t) = TINY + VPA(c,t);
+(all,c,PROD_COMM)            WESUBVA(c) = TINY + VA(c);
+(all,c,TRAD_COMM)            WESUBD(c) = TINY + VDI(c);
+(all,c,TRAD_COMM)            WESUBM(c) = TINY + VI(c);
+(all,n,REG)                  WRORFLEX(n) = TINY + VKB(n);
+(all,c,PROD_COMM)            WESUBT(c) = TINY + VO(c);
+(all,n,REG)                  WDPSM(n) = TINY + sum{c,TRAD_COMM ,VPA(c,n)};
+Write
+WSUBPAR  to file DPRMWGT header "WSUB" longname "Weights to aggregate SUBPAR";
+WINCPAR  to file DPRMWGT header "WINC" longname "Weights to aggregate INCPAR";
+WESUBVA  to file DPRMWGT header "WESB" longname "Weights to aggregate ESUBVA";
+WESUBD   to file DPRMWGT header "WSBD" longname "Weights to aggregate ESUBD";
+WESUBM   to file DPRMWGT header "WSBM" longname "Weights to aggregate ESUBM";
+WRORFLEX to file DPRMWGT header "WROR" longname "Weights to aggregate RORFLEX";
+WESUBT   to file DPRMWGT header "WSBT" longname "Weights to aggregate ESUBT";
+WDPSM    to file DPRMWGT header "WDPS" longname "Weights to aggregate DPSM";
+
+!=============================== end of file ================================!
